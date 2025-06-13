@@ -1,0 +1,198 @@
+// First install esp32 board version 2.0.14 then it will run perfectly
+
+#include <ESP32Servo.h>
+#include "BluetoothSerial.h"
+BluetoothSerial SerialBT;
+
+// Motor Connections
+#define IN1 16
+#define IN2 17
+#define IN3 18
+#define IN4 19
+#define ENA 4
+#define ENB 5
+
+// Ultrasonic Sensor Connections
+int frontTrigPin = 22;
+int frontEchoPin = 23;
+
+int backTrigPin = 12;
+int backEchoPin = 14;
+
+Servo myServo;
+
+int motor_speed = 150;
+
+char t;
+
+void setup() {
+  Serial.begin(9600);
+  SerialBT.begin("ESP32_4WD");  // Bluetooth device name
+
+  // Initializing motor pins
+  pinMode(IN1, OUTPUT);
+  pinMode(IN2, OUTPUT);
+  pinMode(IN3, OUTPUT);
+  pinMode(IN4, OUTPUT);
+  pinMode(ENA, OUTPUT);
+  pinMode(ENB, OUTPUT);
+
+  // Initializing Ultrasonic Sensor Pins
+  pinMode(backTrigPin, OUTPUT);
+  pinMode(backEchoPin, INPUT);
+
+  pinMode(frontTrigPin, OUTPUT);
+  pinMode(frontEchoPin, INPUT);
+
+  myServo.attach(13, 1000, 2000);
+  myServo.write(90);
+}
+
+void loop() {
+  if (SerialBT.available()) {
+    t = SerialBT.read();
+    Serial.println(t);
+  }
+  switch (t) {
+    case 'F':
+      {  //move forward(all motors rotate in forward direction)
+        myServo.write(90);
+        delay(500);  // Wait for servo to stabilize
+        checkAndMove("move forward");
+      }
+      break;
+    case 'B':
+      {  //move reverse (all motors rotate in reverse direction)+
+        if (measureDistanceBack() < 30) {
+          stopRobot();
+        } else {
+          moveBackward();
+        }
+      }
+      break;
+    case 'L':
+      {  //turn right (left side motors rotate in forward direction, right side motors doesn't rotate)
+        myServo.write(160);
+        delay(500);  // Wait for servo to stabilize
+        checkAndMove("move left");
+        delay(300);
+      }
+      break;
+    case 'R':
+      {  //turn left (right side motors rotate in forward direction, left side motors doesn't rotate)
+        myServo.write(20);
+        delay(500);  // Wait for servo to stabilize
+        checkAndMove("move right");
+        delay(300);
+      }
+      break;
+    case 'S':
+      {  //STOP (all motors stop)
+        myServo.write(90);
+        stopRobot();
+      }
+  }
+}
+
+long measureDistanceAhead() {
+  // Send a 10us pulse to the trigger pin to initiate the measurement
+  digitalWrite(frontTrigPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(frontTrigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(frontTrigPin, LOW);
+
+  // Measure the pulse duration from the echo pin
+  long duration = pulseIn(frontEchoPin, HIGH);
+
+  // Calculate distance in centimeters (speed of sound = 343 m/s)
+  long distance = (duration / 2) / 29.1;
+  Serial.println(distance);
+  return distance;
+}
+
+int measureDistanceBack() {
+  long duration;
+  digitalWrite(backTrigPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(backTrigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(backTrigPin, LOW);
+
+  duration = pulseIn(backEchoPin, HIGH, 20000);  // Timeout after 20ms
+
+  if (duration == 0) {
+    return -1;  // No object detected
+  }
+
+  int distance = duration * 0.034 / 2;
+  // Serial.println(distance);
+  return distance;
+}
+
+void checkAndMove(const String& direction) {
+  long distance = measureDistanceAhead();  // Measure the distance to the obstacle
+
+  Serial.print(direction);
+  Serial.print(" Distance: ");
+  Serial.println(distance);
+
+  if (distance > 30) {  // If no obstacle within 30 cm, move the robot in the desired direction
+    if (direction == "move forward") {
+      moveForward();
+    } else if (direction == "move left") {
+      turnLeft();
+    } else if (direction == "move right") {
+      turnRight();
+    }
+  } else {
+    stopRobot();  // Stop if an obstacle is detected
+    Serial.println("Obstacle detected! Moving stopped.");
+  }
+}
+
+
+void moveForward() {
+  analogWrite(ENA, motor_speed);
+  analogWrite(ENB, motor_speed);
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+  digitalWrite(IN3, HIGH);
+  digitalWrite(IN4, LOW);
+}
+
+void moveBackward() {
+  analogWrite(ENA, motor_speed);
+  analogWrite(ENB, motor_speed);
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, HIGH);
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, HIGH);
+}
+
+void turnRight() {
+  analogWrite(ENA, motor_speed);
+  analogWrite(ENB, motor_speed);
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, HIGH);
+  digitalWrite(IN3, HIGH);
+  digitalWrite(IN4, LOW);
+}
+
+void turnLeft() {
+  analogWrite(ENA, motor_speed);
+  analogWrite(ENB, motor_speed);
+  digitalWrite(IN1, HIGH);
+  digitalWrite(IN2, LOW);
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, HIGH);
+}
+
+void stopRobot() {
+  analogWrite(ENA, 0);
+  analogWrite(ENB, 0);
+  digitalWrite(IN1, LOW);
+  digitalWrite(IN2, LOW);
+  digitalWrite(IN3, LOW);
+  digitalWrite(IN4, LOW);
+}
